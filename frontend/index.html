@@ -1,0 +1,1483 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ร้านบ้านตะลุง Ban Ta-lung - จองโต๊ะคอนเสิร์ต</title>
+    <!-- Google Fonts: Kanit -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="style.css?v=19">
+    <!-- QRCode.js: ใช้สร้าง QR Code พร้อมเพย์แบบไดนามิกตามยอดเงินที่ลูกค้าจอง -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/qrcodejs/1.0.0/qrcode.min.js" integrity="sha512-CNgIRecGo7nphbeZ04Sc13ka07paqdeTu0WR1IM4kNcpmBAUSHSQX0FslNhTDadL4O5SAGapGt4FodqL8My0mA==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+    <style>
+        .selected-admin-item {
+            outline: 2px solid #f1c40f !important;
+            box-shadow: 0 0 12px rgba(241, 196, 15, 0.8) !important;
+            z-index: 20 !important;
+        }
+        .resize-handle {
+            position: absolute;
+            width: 10px;
+            height: 10px;
+            background-color: #ffffff;
+            border: 1px solid #000000;
+            border-radius: 2px;
+            z-index: 30;
+        }
+        .handle-e { right: -5px; top: calc(50% - 5px); cursor: e-resize; }
+        .handle-s { bottom: -5px; left: calc(50% - 5px); cursor: s-resize; }
+        .handle-se { right: -5px; bottom: -5px; cursor: se-resize; }
+
+        /* เส้นตาราง Grid และเส้น Snap Guide ขอบเขตผังจัดโต๊ะ */
+        .seat-canvas {
+            background-image: 
+                linear-gradient(to right, rgba(255, 255, 255, 0.05) 1px, transparent 1px),
+                linear-gradient(to bottom, rgba(255, 255, 255, 0.05) 1px, transparent 1px) !important;
+            background-size: 20px 20px !important;
+        }
+
+        .guide-line {
+            position: absolute;
+            background-color: #00e676;
+            box-shadow: 0 0 8px #00e676;
+            z-index: 999;
+            display: none;
+            pointer-events: none;
+        }
+        .guide-line-h { height: 1px; width: 100%; left: 0; }
+        .guide-line-v { width: 1px; height: 100%; top: 0; }
+
+        .canvas-controls-group {
+            display: flex;
+            align-items: center;
+            gap: 10px;
+            flex-wrap: wrap;
+            background: #222;
+            padding: 10px;
+            border-radius: 8px;
+            margin-bottom: 10px;
+        }
+        .control-item {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            color: #fff;
+            font-size: 0.9rem;
+        }
+        .control-item input[type="color"], .canvas-controls-group input[type="color"] {
+            border: none;
+            width: 34px;
+            height: 34px;
+            border-radius: 6px;
+            cursor: pointer;
+            background: none;
+        }
+        .control-item input[type="text"], .control-item input[type="number"], .canvas-controls-group input[type="text"], .canvas-controls-group select {
+            padding: 5px 8px;
+            border-radius: 4px;
+            border: 1px solid #444;
+            background: #333;
+            color: #fff;
+        }
+
+        /* ลำดับชั้น z-index */
+        .draggable-table, .table-btn {
+            z-index: 5;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            box-sizing: border-box;
+            user-select: none;
+            cursor: pointer;
+            transition: transform 0.15s ease, box-shadow 0.15s ease;
+        }
+        .table-btn:hover {
+            transform: scale(1.05);
+            box-shadow: 0 0 10px rgba(255, 255, 255, 0.5);
+        }
+
+        .draggable-stage, .stage-item {
+            z-index: 3;
+            background: #e74c3c;
+            color: #fff;
+            font-weight: bold;
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            user-select: none;
+            box-sizing: border-box;
+        }
+
+        .canvas-zone-tag, .zone-item {
+            z-index: 1; /* โซนอยู่ชั้นล่างสุด ไม่บังโต๊ะ */
+            border-radius: 8px;
+            box-sizing: border-box;
+            user-select: none;
+            font-weight: bold;
+            font-size: 0.9rem;
+        }
+
+        /* Tooltip บอกราคาตอนเอาเมาส์ชี้โต๊ะ */
+        #table-tooltip {
+            position: absolute;
+            display: none;
+            background: rgba(0, 0, 0, 0.9);
+            color: #f1c40f;
+            padding: 6px 12px;
+            border-radius: 6px;
+            border: 1px solid #f1c40f;
+            font-size: 0.85rem;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 9999;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.5);
+        }
+
+        .admin-form-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            gap: 15px;
+            margin-bottom: 15px;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 15px;
+            margin-bottom: 20px;
+        }
+        .stat-card {
+            background: #222;
+            padding: 15px 20px;
+            border-radius: 10px;
+            border-left: 5px solid #3498db;
+            color: #fff;
+        }
+        .stat-card.warning { border-left-color: #f39c12; }
+        .stat-card.success { border-left-color: #2ecc71; }
+        .stat-card.purple { border-left-color: #9b59b6; }
+        .stat-card h4 { margin: 0; font-size: 0.85rem; color: #aaa; font-weight: normal; }
+        .stat-card .val { font-size: 1.6rem; font-weight: bold; margin-top: 5px; }
+
+        .filter-bar {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 15px;
+            flex-wrap: wrap;
+        }
+        .filter-bar input, .filter-bar select {
+            padding: 8px 12px;
+            background: #222;
+            border: 1px solid #444;
+            color: #fff;
+            border-radius: 6px;
+            font-size: 0.9rem;
+        }
+        .filter-bar input { flex: 1; min-width: 200px; }
+
+        /* Style หน้าแก้ไขโปสเตอร์ (Poster Management View) */
+        .poster-preview-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            background: #111;
+            border: 2px solid #333;
+            border-radius: 12px;
+            padding: 20px;
+            margin: 15px 0 25px 0;
+            box-shadow: inset 0 0 20px rgba(0,0,0,0.8);
+        }
+        .poster-screen {
+            width: 100%;
+            max-width: 750px;
+            height: 380px;
+            background: #000;
+            border-radius: 10px;
+            overflow: hidden;
+            position: relative;
+            box-shadow: 0 8px 25px rgba(0,0,0,0.7);
+            border: 1px solid #444;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        .poster-screen img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            transition: opacity 0.5s ease-in-out;
+        }
+        .poster-badge {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: rgba(0,0,0,0.75);
+            color: #f1c40f;
+            padding: 4px 10px;
+            border-radius: 20px;
+            font-size: 0.8rem;
+            border: 1px solid #f1c40f;
+        }
+
+        .poster-timeline-scroll {
+            display: flex;
+            gap: 15px;
+            overflow-x: auto;
+            padding: 10px 5px 20px 5px;
+        }
+        .poster-card {
+            min-width: 210px;
+            max-width: 210px;
+            background: #222;
+            border: 1px solid #444;
+            border-radius: 10px;
+            padding: 10px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+            color: #fff;
+            position: relative;
+        }
+        .poster-card.active-slide {
+            border-color: #f1c40f;
+            box-shadow: 0 0 10px rgba(241, 196, 15, 0.5);
+        }
+        .poster-card img {
+            width: 100%;
+            height: 110px;
+            object-fit: cover;
+            border-radius: 6px;
+        }
+        .poster-time-control {
+            display: flex;
+            align-items: center;
+            gap: 5px;
+            font-size: 0.8rem;
+        }
+        .poster-time-control input {
+            width: 50px;
+            padding: 4px;
+            background: #333;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 4px;
+            text-align: center;
+        }
+        .poster-time-control select {
+            padding: 4px;
+            background: #333;
+            border: 1px solid #555;
+            color: #fff;
+            border-radius: 4px;
+        }
+        .poster-card-actions {
+            display: flex;
+            justify-content: space-between;
+            margin-top: 5px;
+        }
+        .poster-card-actions button {
+            background: #333;
+            border: 1px solid #555;
+            color: #fff;
+            padding: 3px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 0.8rem;
+        }
+        .poster-card-actions button:hover { background: #444; }
+        .poster-card-actions button.del-btn { background: #c0392b; border: none; }
+
+        /* Modal จองโต๊ะ */
+        .modal {
+            position: fixed;
+            top: 0; left: 0; width: 100%; height: 100%;
+            background: rgba(0, 0, 0, 0.85);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 10000;
+        }
+        .modal-content {
+            background: #1e272e;
+            padding: 25px;
+            border-radius: 12px;
+            color: #fff;
+            width: 90%;
+            max-width: 450px;
+            max-height: 90vh;
+            overflow-y: auto;
+            box-shadow: 0 8px 30px rgba(0,0,0,0.8);
+            position: relative;
+        }
+        .close-btn {
+            position: absolute;
+            top: 15px; right: 15px;
+            font-size: 1.5rem;
+            cursor: pointer;
+            color: #aaa;
+        }
+        .form-group-booking {
+            margin-bottom: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 5px;
+        }
+        .form-group-booking label { font-size: 0.85rem; color: #ccc; }
+        .form-group-booking input {
+            padding: 8px 12px;
+            background: #2d3436;
+            border: 1px solid #485460;
+            color: #fff;
+            border-radius: 6px;
+        }
+    </style>
+<body>
+
+    <!-- Tooltip บอกราคาเมื่อเอาเมาส์ไปชี้โต๊ะ -->
+    <div id="table-tooltip"></div>
+<!-- Navigation Bar -->
+<header class="navbar">
+    <div class="logo">🏠 Ban Ta-lung</div>
+    <button class="mobile-menu-toggle" id="mobileMenuToggle" onclick="toggleMobileNav()" aria-label="เปิดเมนู">☰</button>
+    <div class="nav-mobile-wrap" id="navMobileWrap">
+        <ul class="nav-links">
+            <li><a href="#home" onclick="event.preventDefault(); showHomeView(); closeMobileNav();">หน้าแรก</a></li>
+            <!-- <li><a href="#concert" onclick="event.preventDefault(); showTicketView();">ตรวจบัตรเข้าชม</a></li>   -->
+            <li><a href="#booking" onclick="event.preventDefault(); showBookingView(); closeMobileNav();">ผังจองโต๊ะ</a></li>
+                <li><a href="ticket.html">ดูบัตรของฉัน</a></li>
+
+            <!-- 🟢 ผูกฟังก์ชัน showClientMenu() และ showClientContact() -->
+            <li><a href="#menu" onclick="event.preventDefault(); showClientMenu(); closeMobileNav();">เมนูอาหาร</a></li>
+            <li><a href="#contact" onclick="event.preventDefault(); showClientContact(); closeMobileNav();">ติดต่อเรา</a></li>
+        </ul>
+        <div class="auth-buttons">
+            <a href="#" class="btn-login">เข้าสู่ระบบ</a>
+            <a href="#" class="btn-register">สมัครสมาชิก</a>
+        </div>
+    </div>
+</header>
+     
+    <!-- Concert Banner (หน้าแรก) -->
+    <section class="hero-section" id="concert">
+        <div class="concert-banner">
+            <!-- ภาพโปสเตอร์หลัก สไลด์เปลี่ยนรูปตามที่ตั้งค่า -->
+            <img id="main-hero-poster" src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800" alt="Concert Banner">
+            <div class="banner-overlay">
+                <button class="admin-badge" type="button" onclick="openAdminLogin()">⚙️ Admin Mode <span class="admin-login-text">(เข้าสู่ระบบ)</span></button>
+                <div class="banner-content-footer">
+                    <div class="content-row">
+                        <span class="tag">Live Concert</span>
+                        <span class="separator">|</span>
+                        <span class="title" id="display-concert-title">ร้านบ้านตะลุง Night Beat - ดนตรีสดสุดพิเศษ</span>
+                        <span class="separator">|</span>
+                        <span class="info" id="display-concert-date">วันที่: 25 ธ.ค. 2026, ⏰ เวลา: 19:00 น. เป็นต้นไป</span>
+                    </div>
+                    <div class="content-row">
+                        <span class="info">📍 สถานที่: ร้านบ้านตะลุง</span>
+                        <span class="separator">|</span>
+                        <span class="desc">จองโต๊ะล่วงหน้าเพื่อสัมผัสบรรยากาศดนตรีสดและเมนูเครื่องดื่มสุดพิเศษก่อนใคร!</span>
+                    </div>
+                    <div class="content-row">
+                        <button class="btn-goto-booking" type="button" onclick="showBookingView()">🎫 เลือกโต๊ะ / จองบัตรที่นี่ →</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- สรุปจำนวนโต๊ะคงเหลือ (หน้าแรก) - แสดงอย่างเดียว กดจองไม่ได้ -->
+    <section class="table-summary-section" id="table-summary-section">
+        <div class="section-title">
+            <h2>จำนวนที่นั่งคงเหลือ</h2>
+            <p>ดูจำนวนโต๊ะคงเหลือแต่ละโซนได้ที่นี่ กดปุ่ม "จองบัตรที่นี่" ด้านบนเพื่อเลือกโต๊ะ</p>
+        </div>
+        <div class="table-summary-list" id="table-summary-list"></div>
+    </section>
+
+    <!-- Seating Chart Section (หน้าจองบัตร - เข้าถึงผ่านปุ่ม "จองบัตรที่นี่" เท่านั้น) -->
+<section class="booking-section" id="booking" style="display: none; padding-top: 90px;">
+    <div class="section-title">
+        <h2>ผังจองโต๊ะคอนเสิร์ต</h2>
+        <p>💡 เลื่อนเมาส์ชี้ที่โต๊ะเพื่อดูราคาบัตร | คลิกเลือกโต๊ะที่ต้องการ แล้วกดปุ่มยืนยันการจองด้านล่าง</p>
+    </div>
+
+    <div class="legend">
+        <span><i class="dot vip"></i> VIP</span>
+        <span><i class="dot normal"></i> ธรรมดา</span>
+        <span><i class="dot reserved"></i> จองแล้ว</span>
+    </div>
+
+    <div class="seat-grid" id="main-seat-grid"></div>
+
+    <div class="booking-action">
+        <div class="selection-summary" id="selection-summary">เลือกแล้ว 0 โต๊ะ | รวม 0 บาท</div>
+        <button class="btn-confirm" id="btn-confirm" onclick="openUserBookingModal()">ยืนยันการจองโต๊ะที่เลือก</button>
+    </div>
+</section>
+<!-- 🎫 หน้าตรวจบัตรเข้าชม (ใช้ Class seat-grid สเกลเดียวกับหน้าจองหลัก) -->
+<section id="inspect-section" class="inspect-section" style="display:none; padding:16px 12px;">
+        <div class="bt-inspect-wrap">
+            <div class="bt-inspect-head">
+                <div>
+                    <h2 style="margin:0;color:#f1c40f;">🎫 ตรวจบัตรเข้างาน</h2>
+                    <p style="margin:4px 0 0;color:#94a3b8;font-size:.85rem;">แตะโต๊ะที่จองแล้วเพื่อเช็กอิน · แตะโต๊ะว่างเพื่อขายหน้างาน · หรือสแกน QR บนบัตรของลูกค้า</p>
+                </div>
+                <div class="bt-inspect-head-btns">
+                    <button type="button" class="bt-btn primary" onclick="openScanOverlay()">📷 สแกนบัตร</button>
+                    <button type="button" class="bt-btn" onclick="refreshInspectView()">🔄 รีเฟรช</button>
+                    <button type="button" class="bt-btn" data-admin-only onclick="closeInspectPage()">⬅️ กลับเมนูหลัก</button>
+                    <button type="button" class="bt-btn red" data-staff-only onclick="closeAdmin()">🚪 ออกจากระบบ</button>
+                </div>
+            </div>
+
+            <div id="inspect-banner" class="bt-banner" style="display:none;"></div>
+            <div id="inspect-summary" class="bt-summary"></div>
+
+            <div class="bt-searchbar">
+                <input type="search" id="inspect-search-input" placeholder="ค้นหา: รหัสโต๊ะ / ชื่อ / เบอร์โทร / รหัสจอง (BK-...)" autocomplete="off">
+                <button type="button" class="bt-btn primary" onclick="inspectSearch()">🔍 ค้นหา</button>
+                <button type="button" class="bt-btn" onclick="inspectSearchClear()">ล้าง</button>
+            </div>
+            <div id="inspect-search-results" class="bt-results" style="display:none;"></div>
+
+            <div class="bt-legend">
+                <span><i style="background:#2ecc71"></i> เข้างานแล้ว</span>
+                <span><i style="background:#e67e22"></i> จองแล้ว (รอเข้างาน)</span>
+                <span><i style="background:#f1c40f;border:2px dashed #7d6608"></i> รอตรวจสลิป</span>
+                <span><i style="background:#34495e"></i> ว่าง</span>
+            </div>
+            <div class="bt-updated" id="inspect-updated"></div>
+
+            <div class="seat-grid" id="inspect-seat-canvas" style="position:relative; margin:0 auto;"></div>
+        </div>
+    </section>
+
+<!-- 📝 Modal แสดงรายละเอียดผู้จอง / ปุ่มเช็กอินเฉพาะหน้านี้ -->
+
+
+<!-- Rules & Conditions (หน้าแรก) -->
+<section class="rules-section">
+    <h3>เงื่อนไขการจอง</h3>
+    <ul id="display-rules-list">
+        <li>จำกัดไม่เกิน 4 ท่าน ต่อ 1 โต๊ะ</li>
+        <li>กรุณามาถึงร้านก่อนเวลา 20:00 น. มิฉะนั้นระบบจะยกเลิกสิทธิ์อัตโนมัติ</li>
+        <li>สอบถามเพิ่มเติม โทร: 08X-XXX-XXXX</li>
+    </ul>
+</section>
+<!-- 1. หน้าเมนูกลาง (Admin Central Hub) -->
+<!-- ========================================== -->
+<section id="admin-hub-section" class="admin-section" style="display: none;">
+    <div class="admin-header">
+        <h2>⚙️ ระบบจัดการหลังบ้าน (Admin Central Hub)</h2>
+        <button class="btn-exit" type="button" onclick="closeAdmin()">🚪 ออกจากโหมดแอดมิน</button>
+    </div>
+
+    <!-- ปุ่มลัด: เปิดขาย / ปิดการขาย / ขายหมด (เติมโดย renderSalesQuick ใน admin-tools.js) -->
+    <div id="sales-quick" class="bt-sales-quick"></div>
+
+    <div class="admin-hub-grid">
+        <div class="hub-category-title">📌 ระบบจัดการงานหน้าร้าน & การจอง</div>
+        <div class="hub-cards-group">
+            <div class="hub-card highlight" onclick="openAdminInspect()">
+                <div class="hub-icon">🎟️</div>
+                <div class="hub-info">
+                    <h3>ตรวจบัตรเข้าชม</h3>
+                    <p>เช็กอินลูกค้า สแกนบัตรเข้างานหน้าประตู</p>
+                </div>
+            </div>
+
+            <div class="hub-card highlight" onclick="openAdminSubPage('booking')">
+                <div class="hub-icon">📋</div>
+                <div class="hub-info">
+                    <h3>รายการจอง & ตรวจสลิป</h3>
+                    <p>ตรวจสอบสลิปโอนเงิน อนุมัติ/ปฏิเสธการจอง</p>
+                </div>
+            </div>
+
+            <div class="hub-card" onclick="openAdminSubPage('members')">
+                <div class="hub-icon">👥</div>
+                <div class="hub-info">
+                    <h3>ดูข้อมูลสมาชิก</h3>
+                    <p>รายชื่อสมาชิก ประวัติการเข้าชม และเบอร์โทร</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="hub-category-title">🛒 การขาย & เอกสาร</div>
+        <div class="hub-cards-group">
+            <div class="hub-card highlight" onclick="openScanFromHub()">
+                <div class="hub-icon">📷</div>
+                <div class="hub-info">
+                    <h3>สแกนบัตรเข้างาน</h3>
+                    <p>เปิดกล้องสแกน QR บนบัตรของลูกค้า เช็กอินทันที</p>
+                </div>
+            </div>
+            <div class="hub-card" onclick="openSalesSettings()">
+                <div class="hub-icon">⚙️</div>
+                <div class="hub-info">
+                    <h3>ตั้งค่าการขายบัตร</h3>
+                    <p>เปิด/ปิดการขาย ขายหมด เวลาปิดรับจอง จำนวนโต๊ะสูงสุด</p>
+                </div>
+            </div>
+            <div class="hub-card" onclick="openReceiptList()">
+                <div class="hub-icon">🧾</div>
+                <div class="hub-info">
+                    <h3>ใบเสร็จรับเงิน</h3>
+                    <p>ดู พิมพ์ และยกเลิกใบเสร็จที่ออกไปแล้ว</p>
+                </div>
+            </div>
+            <div class="hub-card" onclick="openArchives()">
+                <div class="hub-icon">📦</div>
+                <div class="hub-info">
+                    <h3>ข้อมูลงานที่ผ่านมา</h3>
+                    <p>ข้อมูลการจองที่สำรองไว้ตอนสิ้นสุดคอนเสิร์ต (ดาวน์โหลด CSV)</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="hub-category-title">🎨 ผังโต๊ะ & ข้อมูลคอนเสิร์ต</div>
+        <div class="hub-cards-group">
+            <div class="hub-card highlight" onclick="openLayoutEditor()">
+                <div class="hub-icon">🗺️</div>
+                <div class="hub-info">
+                    <h3>แก้ไขผังจองโต๊ะ & ราคา</h3>
+                    <p>จัดตำแหน่งโต๊ะ เพิ่ม/ลบโซน ตั้งราคาบัตร</p>
+                </div>
+            </div>
+
+            <div class="hub-card" onclick="openAdminSubPage('poster')">
+                <div class="hub-icon">🖼️</div>
+                <div class="hub-info">
+                    <h3>โปสเตอร์ & บัญชีธนาคาร</h3>
+                    <p>เปลี่ยนรูปแบนเนอร์ และตั้งค่า QR Code รับเงิน</p>
+                </div>
+            </div>
+        </div>
+
+        <div class="hub-category-title">🌐 จัดการเนื้อหาหน้าเว็บ</div>
+        <div class="hub-cards-group">
+            <!-- 🟢 อัปเดตผูกฟังก์ชัน openEditMenuModalDirectly -->
+            <div class="hub-card" onclick="openEditMenuModal()">
+                <div class="hub-icon">🍔</div>
+                <div class="hub-info">
+                    <h3>แก้ไขเมนูอาหาร</h3>
+                    <p>เพิ่ม ลบ รายการอาหารและเครื่องดื่ม</p>
+                </div>
+            </div>
+
+            <!-- 🟢 อัปเดตผูกฟังก์ชัน openEditContactModalDirectly -->
+            <div class="hub-card" onclick="openEditContactModal()">
+                <div class="hub-icon">📞</div>
+                <div class="hub-info">
+                    <h3>แก้ไขติดต่อเรา</h3>
+                    <p>อัปเดตเบอร์โทร แผนที่ร้าน และโซเชียล</p>
+                </div>
+            </div>
+        </div>
+    </div>
+</section>
+<!-- ========================================== -->
+<!-- ========================================== -->
+<!-- ========================================== -->
+<!-- 2. หน้าจัดผังโต๊ะ (Admin Layout Section) -->
+<!-- ========================================== -->
+<section id="admin-section" class="admin-section" style="display: none;">
+    <div class="admin-header">
+        <h2>🛠️ ระบบจัดการหลังบ้าน (Admin Dashboard)</h2>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn-back-hub" type="button" onclick="showAdminHub()">⬅️ กลับหน้าเมนูหลัก</button>
+            <button class="btn-exit" type="button" onclick="closeAdmin()">🚪 ออกจากโหมดแอดมิน</button>
+        </div>
+    </div>
+
+    <!-- 1. เครื่องมือจัดผังโต๊ะ Drag & Drop -->
+    <div class="admin-card">
+        <!-- 🟢 ปลดล็อกความสูงกล่อง (height: auto !important) ป้องกันปุ่มลอยซ้อนทับ -->
+        <div class="canvas-controls-group" style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between; margin-bottom: 20px !important; height: auto !important; min-height: max-content !important; padding: 12px !important;">
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+                <input type="text" id="new-zone-name" placeholder="ชื่อโซนใหม่" style="width: 85px;">
+                <input type="color" id="new-zone-color" value="#f1c40f" title="เลือกสีโซน">
+                <button type="button" class="btn-save" onclick="addAdminZone()">+ เพิ่มโซน</button>
+                <span style="color: #555;">|</span>
+                <button type="button" class="btn-save" style="background: #e74c3c;" onclick="addAdminStage()">+ เพิ่มเวที</button>
+                <span style="color: #555;">|</span>
+                <input type="text" id="new-table-id" placeholder="เลขโต๊ะ (เช่น C-01)" style="width: 85px;">
+                <select id="new-table-type">
+                    <option value="vip">โซน VIP</option>
+                    <option value="normal">โซน ธรรมดา</option>
+                    <option value="general">โซน ทั่วไป</option>
+                </select>
+                <button type="button" class="btn-save" onclick="addAdminTable()">+ เพิ่มโต๊ะ</button>
+            </div>
+
+            <button type="button" class="btn-save" style="background: #2ecc71; white-space: nowrap; margin-left: auto;" onclick="saveAdminLayout()">💾 บันทึกผังลงหน้าแรก</button>
+        </div>
+
+        <div class="canvas-controls-group" style="background: #1a252f; border: 1px solid #34495e; display: flex; flex-wrap: wrap; gap: 10px; align-items: center; height: auto !important; min-height: max-content !important; padding: 12px !important; margin-bottom: 15px !important;">
+            <span id="selected-item-label" style="color: #f1c40f; font-weight: bold;">👈 คลิกที่โต๊ะ เวที หรือโซนเพื่อแก้ไข</span>
+            <span style="color: #555;">|</span>
+            <div class="control-item">
+                <label>🎨 สี:</label>
+                <input type="color" id="item-color-picker" value="#3498db" onchange="applyItemColor(this.value)">
+            </div>
+            <span style="color: #555;">|</span>
+            <span id="item-size-display" style="color: #aaa; font-size: 0.85rem;">ขนาด: -</span>
+            <button type="button" class="btn-save" style="background: #8e44ad; font-size: 0.8rem; padding: 4px 10px;" onclick="applyLastSizeToSelected()" title="ปรับขนาดโต๊ะนี้ให้เท่ากับโต๊ะล่าสุด">📐 เท่ากับโต๊ะล่าสุด</button>
+            <span style="color: #555;">|</span>
+            <label style="color: #00e676; font-size: 0.85rem; cursor: pointer; display: flex; align-items: center; gap: 4px;">
+                <input type="checkbox" id="snap-to-grid" checked> 🧲 เส้นฉาย Snap ช่วยจัดตรง
+            </label>
+            <button type="button" class="btn-action reject" style="margin-left: auto;" onclick="deleteSelectedItem()">🗑️ ลบวัตถุนี้</button>
+        </div>
+
+        <div id="admin-seat-canvas" class="seat-canvas"></div>
+        <p style="font-size: 0.8rem; color: #888; margin-top: 8px;">💡 <b>ระบบช่วยจัดตรง:</b> เวลาลากย้ายโต๊ะ จะมีเส้นฉายสีเขียวเรืองแสงคอยบอกเมื่อโต๊ะขนานหรือตรงกับโต๊ะข้างๆ เป๊ะๆ | โต๊ะใหม่จะสร้างตามขนาดโต๊ะล่าสุดให้อัตโนมัติ</p>
+    </div>
+
+    <!-- 2. ฟอร์มแก้ไขข้อมูลคอนเสิร์ต และ กำหนดราคาบัตร -->
+    <div class="admin-card">
+        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; flex-wrap: wrap; gap: 10px;">
+            <h3 style="margin: 0;">✏️ แก้ไขข้อมูลงานคอนเสิร์ต และ ราคาบัตรประจำโซน</h3>
+            <button type="button" class="btn-save" style="background: #9b59b6; font-size: 0.9rem;" onclick="openAdminSubPage('poster')">🖼️ กดเพื่อแก้ไขโปสเตอร์ ➔</button>
+        </div>
+        
+        <div class="admin-form-grid">
+            <div class="form-group">
+                <label>ชื่องาน / ศิลปิน</label>
+                <input type="text" id="edit-title" value="ร้านบ้านตะลุง Night Beat - ดนตรีสดสุดพิเศษ">
+            </div>
+            <div class="form-group">
+                <label>วันที่และเวลา</label>
+                <input type="text" id="edit-date" value="วันที่: 25 ธ.ค. 2026, ⏰ เวลา: 19:00 น. เป็นต้นไป">
+            </div>
+            <div class="form-group">
+                <label>🎟️ ราคาบัตร : โซน VIP</label>
+                <input type="text" id="edit-price-vip" value="2,500฿">
+            </div>
+            <div class="form-group">
+                <label>🎟️ ราคาบัตร : โซน ธรรมดา</label>
+                <input type="text" id="edit-price-normal" value="1,200฿">
+            </div>
+            <div class="form-group">
+                <label>🎟️ ราคาบัตร : โซน ทั่วไป</label>
+                <input type="text" id="edit-price-general" value="800฿">
+            </div>
+        </div>
+        <button id="btn-save-concert" type="button" class="btn-save" style="background: #27ae60;" onclick="saveConcertDetails()">💾 บันทึกข้อมูลงานและอัปเดตราคาบัตรลงผัง</button>
+    </div>
+
+    <!-- 3. แถบเข้าสู่หน้ารายการจอง -->
+    <div class="admin-card" style="display: flex; align-items: center; justify-content: space-between; padding: 12px 20px; background: #1e272e; flex-wrap: wrap; gap: 10px;">
+        <div style="display: flex; align-items: center; gap: 10px;">
+            <span style="font-size: 1.2rem;">📋</span>
+            <div>
+                <strong style="color: #f1c40f; font-size: 0.95rem;">ระบบจัดการรายการจองและตรวจสอบสลิป</strong>
+                <span style="color: #bdc3c7; font-size: 0.8rem; display: block;">ตรวจสอบสลิปการโอนเงิน และอนุมัติสิทธิ์ลูกค้า</span>
+            </div>
+        </div>
+        <button type="button" class="btn-save" style="background: #e67e22; font-size: 0.85rem; padding: 7px 18px; border-radius: 20px;" onclick="openAdminSubPage('booking')">
+            🔍 เข้าสู่หน้ารายการจอง & ตรวจสอบสลิป ➔
+        </button>
+    </div>
+</section>
+<!-- ========================================== -->
+<!-- 3. หน้าจัดการโปสเตอร์ & ธนาคาร & เงื่อนไขการจอง -->
+<!-- ========================================== -->
+<section id="admin-poster-page" class="admin-section" style="display: none;">
+    <div class="admin-header">
+        <h2>🖼️ จัดการโปสเตอร์คอนเสิร์ต & บัญชีรับเงิน</h2>
+        <div style="display: flex; gap: 10px;">
+            <button class="btn-back-hub" type="button" onclick="showAdminHub()">⬅️ กลับหน้าเมนูหลัก</button>
+            <button class="btn-save" type="button" style="background: #27ae60;" onclick="savePosterSettings()">💾 บันทึกโปสเตอร์</button>
+        </div>
+    </div>
+
+    <div class="admin-card">
+        <div class="poster-preview-container">
+            <h4 style="color: #f1c40f; margin: 0 0 10px 0;">📺 LIVE PREVIEW (ตัวอย่างสไลด์โชว์หน้าแรก)</h4>
+            <div class="poster-screen">
+                <img id="preview-poster-img" src="https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=800" alt="Preview">
+                <div class="poster-badge" id="preview-poster-timer">กำลังเล่น: รูปที่ 1 (5 วินาที)</div>
+            </div>
+        </div>
+
+        <div class="canvas-controls-group" style="justify-content: space-between;">
+            <div style="display: flex; align-items: center; gap: 10px;">
+                <button type="button" class="btn-save" style="background: #3498db;" onclick="document.getElementById('poster-file-input').click()">📁 + อัปโหลดรูปภาพใหม่</button>
+                <input type="file" id="poster-file-input" accept="image/*" multiple style="display: none;" onchange="handlePosterUpload(event)">
+                <span style="font-size: 0.85rem; color: #aaa;">(สามารถเลือกได้หลายรูป)</span>
+            </div>
+            <label style="color: #fff; font-size: 0.9rem; cursor: pointer;">
+                <input type="checkbox" id="poster-autoplay-loop" checked onchange="togglePosterLoop(this.checked)"> เล่นวนลูปอัตโนมัติ (Autoplay Loop)
+            </label>
+        </div>
+
+        <h4 style="color: #bdc3c7; margin: 15px 0 8px 0;">🎞️ รายการภาพและตั้งค่าเวลาเล่นสไลด์:</h4>
+        <div class="poster-timeline-scroll" id="poster-timeline-container"></div>
+    </div>
+
+    <!-- 🟢 ปรับโครงสร้างเพื่อจัดระดับปุ่มให้เท่ากันทั้ง 2 ฝั่ง -->
+    <div id="admin-panel" class="admin-container">
+        <div class="admin-card" style="background: #1e293b; padding: 20px; border-radius: 12px; color: #fff; margin-top: 20px; display: grid; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); gap: 24px; align-items: stretch;">
+            
+            <!-- ฝั่งซ้าย: ตั้งค่า QR Code & บัญชีเดิม -->
+            <div style="display: flex; flex-direction: column;">
+                <h3 style="margin-top: 0; color: #f1c40f;">⚙️ ตั้งค่า QR Code & บัญชีรับเงิน</h3>
+                <form id="admin-bank-form" onsubmit="saveBankSettings(event)" style="display: flex; flex-direction: column; gap: 12px; flex: 1;">
+                    <label>ธนาคาร: 
+                        <input type="text" id="set-bank-name" placeholder="เช่น กสิกรไทย (KBANK)" required style="width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+                    </label>
+                    <label>เลขบัญชี: 
+                        <input type="text" id="set-bank-number" placeholder="เช่น 123-4-56789-0" required style="width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+                    </label>
+                    <label>ชื่อบัญชี: 
+                        <input type="text" id="set-account-name" placeholder="เช่น บ้านตะลุง Ban Ta-lung" required style="width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+                    </label>
+                    <label>เลขพร้อมเพย์ (PromptPay ID) สำหรับสร้าง QR อัตโนมัติ:
+                        <input type="text" id="set-promptpay-id" placeholder="เบอร์โทร 10 หลัก หรือเลขบัตร ปชช. 13 หลัก" style="width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+                        <small style="color: #94a3b8;">ระบบจะสร้าง QR Code ที่มียอดเงินฝังไว้อัตโนมัติตามราคาที่ลูกค้าจอง ไม่ต้องอัปโหลดรูป QR เอง</small>
+                    </label>
+                    <label>ลิงก์ Google Sheets (สำหรับสำรองข้อมูลรายการจอง):
+                        <input type="text" id="set-google-sheet-url" placeholder="https://script.google.com/macros/s/xxxxx/exec" style="width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+                        <small style="color: #94a3b8;">ใช้ตอนกด "สิ้นสุดคอนเสิร์ต" และปุ่มส่งออกข้อมูล เปลี่ยนลิงก์ได้จากตรงนี้เลย ไม่ต้องแก้โค้ด</small>
+                    </label>
+                    <button type="submit" id="btn-save-bank" style="background: #22c55e; color: white; padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: auto;">
+                        💾 บันทึกข้อมูลบัญชี
+                    </button>
+                </form>
+            </div>
+
+            <!-- ฝั่งขวา: ช่องปรับตั้งค่าเงื่อนไขการจอง -->
+            <div style="border-left: 1px solid #334155; padding-left: 20px; display: flex; flex-direction: column;">
+                <h3 style="margin-top: 0; color: #f1c40f;">📜 ตั้งค่าเงื่อนไขการจอง</h3>
+                <form onsubmit="saveBookingRules(event)" style="display: flex; flex-direction: column; gap: 12px; flex: 1;">
+                    <label>เงื่อนไขข้อที่ 1: 
+                        <input type="text" id="set-rule-1" placeholder="จำกัดไม่เกิน 4 ท่าน ต่อ 1 โต๊ะ" style="width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+                    </label>
+                    <label>เงื่อนไขข้อที่ 2: 
+                        <input type="text" id="set-rule-2" placeholder="กรุณามาถึงร้านก่อนเวลา 20:00 น..." style="width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+                    </label>
+                    <label>เงื่อนไขข้อที่ 3: 
+                        <input type="text" id="set-rule-3" placeholder="สอบถามเพิ่มเติม โทร: 08X-XXX-XXXX" style="width: 100%; padding: 8px; margin-top: 4px; border-radius: 4px; border: 1px solid #334155; background: #0f172a; color: #fff;">
+                    </label>
+                    <button type="submit" style="background: #22c55e; color: white; padding: 10px; border: none; border-radius: 6px; cursor: pointer; font-weight: bold; margin-top: auto;">
+                        💾 บันทึกเงื่อนไขการจอง
+                    </button>
+                </form>
+            </div>
+
+        </div>
+    </div>
+</section>
+<!-- ========================================== -->
+<!-- 4. หน้ารายการจองและตรวจสอบสลิป -->
+<!-- ========================================== -->
+<section id="admin-booking-page" class="admin-section" style="display: none;">
+    <div class="admin-header">
+        <h2>📋 หน้ารายการจองและตรวจสอบสลิป (Booking & Payment)</h2>
+        <button class="btn-back-hub" type="button" onclick="showAdminHub()">⬅️ กลับหน้าเมนูหลัก</button>
+    </div>
+
+    <div class="stats-grid">
+        <div class="stat-card purple">
+            <h4>รายการจองทั้งหมด</h4>
+            <div class="val" id="stat-total">0 รายการ</div>
+        </div>
+        <div class="stat-card warning">
+            <h4>⏳ รอตรวจสอบสลิป</h4>
+            <div class="val" id="stat-pending">0 รายการ</div>
+        </div>
+        <div class="stat-card success">
+            <h4>✅ อนุมัติเรียบร้อย</h4>
+            <div class="val" id="stat-approved">0 รายการ</div>
+        </div>
+        <div class="stat-card">
+            <h4>💰 ยอดเงินรวมที่ยืนยัน</h4>
+            <div class="val" style="color: #2ecc71;" id="stat-income">0 ฿</div>
+        </div>
+    </div>
+
+    <div class="admin-card">
+        <div class="filter-bar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; width: 100%; box-sizing: border-box; margin-bottom: 15px;">
+            <input type="text" id="booking-search" placeholder="🔎 ค้นหาจากชื่อลูกค้า, เบอร์โทร, รหัสจอง หรือ โต๊ะ..." onkeyup="filterBookings()" style="flex: 1; min-width: 180px; padding: 10px 14px; background: #222; border: 1px solid #444; border-radius: 8px; color: #fff; font-size: 0.9rem;">
+            
+            <select id="booking-status-filter" onchange="filterBookings()" style="padding: 10px 12px; background: #222; border: 1px solid #444; border-radius: 8px; color: #fff; font-size: 0.9rem; flex-shrink: 0; white-space: nowrap;">
+                <option value="all">สถานะทั้งหมด</option>
+                <option value="pending">⏳ รอตรวจสลิป</option>
+                <option value="approved">✅ อนุมัติแล้ว</option>
+                <option value="unpaid">💰 อนุมัติแล้วแต่ยังไม่จ่าย</option>
+                <option value="rejected">❌ ปฏิเสธ/ยกเลิก</option>
+            </select>
+
+            <select id="booking-sort-order" onchange="renderBookingTable()" style="padding: 10px 12px; background: #222; border: 1px solid #444; border-radius: 8px; color: #fff; font-size: 0.9rem; flex-shrink: 0; white-space: nowrap;">
+                <option value="default">เรียงล่าสุดก่อน</option>
+                <option value="table-asc">โต๊ะ ก-ฮ / น้อย-มาก</option>
+                <option value="table-desc">โต๊ะ ฮ-ก / มาก-น้อย</option>
+            </select>
+            
+            <button id="btnExportToSheet" class="btn-export" onclick="exportToGoogleSheet()" style="white-space: nowrap; flex-shrink: 0; padding: 10px 14px; font-size: 0.88rem;">
+                📊 ส่งข้อมูลไป Google Sheets
+            </button>
+            
+            <button type="button" class="btn-export" onclick="downloadBookingsCsv()" style="white-space: nowrap; flex-shrink: 0; padding: 10px 14px; font-size: 0.88rem;">⬇️ CSV</button>
+            <button type="button" class="btn-export" onclick="openArchives()" style="white-space: nowrap; flex-shrink: 0; padding: 10px 14px; font-size: 0.88rem;">📦 งานที่ผ่านมา</button>
+
+            <!-- 🟢 ปรับย่อข้อความปุ่มให้สั้นกระชับ ไม่ล้นกรอบ (เพิ่มช่องเรียงลำดับเข้ามาแล้ว พื้นที่ตึงขึ้น) -->
+            <button id="btnEndConcert" class="btn-export" onclick="endConcertWithAuth()" style="background-color: #dc3545; color: white; white-space: nowrap; flex-shrink: 0; padding: 10px 14px; font-size: 0.88rem;">
+                🏁 สิ้นสุดคอนเสิร์ต
+            </button>
+        </div>
+
+        <div class="table-responsive">
+            <table class="admin-table">
+                <thead>
+                    <tr>
+                        <th>รหัสจอง</th>
+                        <th>วันที่-เวลาจอง</th>
+                        <th>ชื่อ - นามสกุล ลูกค้า</th>
+                        <th>เบอร์โทร</th>
+                        <th>โต๊ะที่จอง</th>
+                        <th style="color: #facc15;">ยอดเงิน</th>
+                        <th>หลักฐานสลิป</th>
+                        <th>สถานะ</th>
+                        <th>จัดการรายการ</th>
+                    </tr>
+                </thead>
+                <tbody id="full-booking-list"></tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- ========================================== -->
+<!-- หน้าใบเสร็จทั้งหมด (หน้าเต็ม ไม่ใช่ป็อปอัป) -->
+<!-- ========================================== -->
+<section id="admin-receipts-page" class="admin-section" style="display: none;">
+    <div class="admin-header">
+        <h2>🧾 ใบเสร็จทั้งหมด</h2>
+        <button class="btn-back-hub" type="button" onclick="showAdminHub()">⬅️ กลับหน้าเมนูหลัก</button>
+    </div>
+    <div class="stats-grid">
+        <div class="stat-card purple"><h4>ใบเสร็จที่ใช้งานอยู่</h4><div class="val" id="rc-stat-count">0 ใบ</div></div>
+        <div class="stat-card"><h4>💰 ยอดรวม</h4><div class="val" style="color: #2ecc71;" id="rc-stat-total">0 ฿</div></div>
+        <div class="stat-card warning"><h4>ยกเลิก (void)</h4><div class="val" id="rc-stat-void">0 ใบ</div></div>
+    </div>
+    <div class="admin-card">
+        <div class="filter-bar" style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 15px;">
+            <input type="text" id="receipt-search" placeholder="🔎 ค้นหาจากเลขที่ใบเสร็จ, ชื่อลูกค้า, รหัสจอง หรือ โต๊ะ..." oninput="filterReceiptRows()" style="flex: 1; min-width: 180px; padding: 10px 14px; background: #222; border: 1px solid #444; border-radius: 8px; color: #fff; font-size: 0.9rem;">
+        </div>
+        <p class="bt-hint" style="margin: 0 0 10px;">ใบเสร็จไม่ถูกลบเมื่อกด "สิ้นสุดคอนเสิร์ต" ถ้าออกผิดให้ยกเลิก (void) แล้วออกใหม่</p>
+        <div class="table-responsive">
+            <table class="admin-table">
+                <thead><tr><th>เลขที่</th><th>วันที่-เวลา</th><th>ลูกค้า</th><th>รหัสจอง</th><th>โต๊ะ</th><th>วิธีชำระ</th><th style="color: #facc15;">ยอดเงิน</th><th>สถานะ</th><th>จัดการ</th></tr></thead>
+                <tbody id="receipt-page-list"></tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- ========================================== -->
+<!-- หน้าข้อมูลงานที่ผ่านมา (หน้าเต็ม ไม่ใช่ป็อปอัป) -->
+<!-- ========================================== -->
+<section id="admin-archives-page" class="admin-section" style="display: none;">
+    <div class="admin-header">
+        <h2>📦 ข้อมูลงานที่ผ่านมา (สำรองอัตโนมัติ)</h2>
+        <button class="btn-back-hub" type="button" onclick="showAdminHub()">⬅️ กลับหน้าเมนูหลัก</button>
+    </div>
+    <div class="admin-card">
+        <p class="bt-hint" style="margin: 0 0 10px;">ระบบสำรองข้อมูลการจองทั้งหมดไว้ทุกครั้งที่กด "สิ้นสุดคอนเสิร์ต" ดาวน์โหลดเป็น CSV หรือลบรูปสลิป (ข้อมูลลูกค้าบนรูป) ออกจาก Cloudinary ได้ที่นี่</p>
+        <div class="table-responsive">
+            <table class="admin-table">
+                <thead><tr><th>#</th><th>สิ้นสุดเมื่อ</th><th>งาน</th><th>จำนวนรายการ</th><th>จัดการ</th></tr></thead>
+                <tbody id="archive-page-list"></tbody>
+            </table>
+        </div>
+    </div>
+</section>
+
+<!-- ========================================== -->
+<!-- 5. หน้าเมนูอาหาร & เครื่องดื่ม (หน้าเต็มแบบเดียวกับหน้าแรก/ผังจองโต๊ะ ไม่ใช่ป็อปอัป) -->
+<!-- ========================================== -->
+<section class="menu-page-section" id="menu-page" style="display: none; padding: 6rem 5% 3rem;">
+    <div style="max-width: 1000px; margin: 0 auto;">
+
+        <!-- 🟢 ย้าย section-title เข้ามาใน Container + จัดกลาง -->
+        <div class="section-title" style="text-align: center; margin-bottom: 20px;">
+            <h2>🍔 เมนูอาหาร & เครื่องดื่ม 🍹</h2>
+            <p>เลือกดูเมนูอาหารและเครื่องดื่มของร้านบ้านตะลุง</p>
+        </div>
+
+        <div style="display: flex; justify-content: flex-end; margin-bottom: 10px;">
+            <span id="menuCountBadge" style="font-size: 0.8rem; background: #1a1a1a; color: #cbd5e1; padding: 3px 10px; border-radius: 20px; font-weight: bold; border: 1px solid #333;">0 รายการ</span>
+        </div>
+
+        <div style="display: flex; flex-direction: column; gap: 10px; margin-bottom: 20px;">
+            <input type="text" id="menuSearchInput" oninput="filterClientMenu()" placeholder="🔍 พิมพ์ค้นหาเมนู..."
+                   style="width: 100%; padding: 10px 14px; border-radius: 8px; border: 1px solid #475569; background: #1a1a1a; color: #ffffff; font-size: 0.95rem; outline: none; box-sizing: border-box;">
+
+            <div style="display: flex; gap: 8px; flex-wrap: wrap; justify-content: center;">
+                <button onclick="setCategoryFilter('all')" id="btn-cat-all" style="padding: 8px 16px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer;">ทั้งหมด</button>
+                <button onclick="setCategoryFilter('food')" id="btn-cat-food" style="padding: 8px 16px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer;">🍱 อาหารหลัก</button>
+                <button onclick="setCategoryFilter('snack')" id="btn-cat-snack" style="padding: 8px 16px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer;">🍟 ทานเล่น</button>
+                <button onclick="setCategoryFilter('drink')" id="btn-cat-drink" style="padding: 8px 16px; border-radius: 8px; border: none; font-weight: bold; cursor: pointer;">🍹 เครื่องดื่ม</button>
+            </div>
+        </div>
+
+        <div id="menuGridContainer" style="display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 16px;">
+        </div>
+    </div>
+</section>
+
+<!-- 6. หน้าติดต่อเรา (หน้าเต็มแบบเดียวกับหน้าแรก/ผังจองโต๊ะ ไม่ใช่ป็อปอัป) -->
+<!-- ========================================== -->
+<section class="contact-page-section" id="contact-page" style="display: none; padding: 6rem 5% 3rem;">
+    <div style="max-width: 560px; margin: 0 auto;">
+
+        <!-- 🟢 ย้าย section-title เข้ามาใน Container + จัดกลาง -->
+        <div class="section-title" style="text-align: center; margin-bottom: 24px;">
+            <h2>📞 ติดต่อเรา</h2>
+            <p>ช่องทางติดต่อร้านบ้านตะลุง Ban Ta-lung</p>
+        </div>
+
+        <!-- พื้นที่แสดงเนื้อหาข้อมูลติดต่อ -->
+        <div id="contactPageContent"></div>
+
+    </div>
+</section>
+<!-- ========================================== -->
+<!-- Modals ต่างๆ -->
+<!-- ========================================== -->
+<!-- Modal ยืนยันการจอง -->
+<div id="user-booking-modal" class="modal" style="display: none;">
+    <div class="modal-content">
+        <span class="close-btn" onclick="closeUserBookingModal()">&times;</span>
+        <h3 style="color: #f1c40f; margin-bottom: 5px;">📝 ยืนยันการจองโต๊ะ</h3>
+        <p style="font-size: 0.85rem; color: #aaa; margin-bottom: 5px;">โต๊ะที่เลือก: <b id="modal-selected-tables" style="color: #2ecc71;">-</b></p>
+        <p style="font-size: 0.85rem; color: #aaa; margin-bottom: 15px;">ยอดรวม: <b id="modal-total-price" style="color: #f1c40f;">0 บาท</b></p>
+
+        <div style="background: rgba(255, 255, 255, 0.05); padding: 12px; border-radius: 8px; text-align: center; margin: 10px 0; border: 1px solid rgba(255, 255, 255, 0.1);">
+            <p style="margin: 0 0 8px 0; font-size: 0.9rem; color: #aaa;">สแกนโอนเงินผ่าน QR Code หรือ บัญชีธนาคาร</p>
+            <div id="bank-qr-container" style="width: 168px; height: 168px; margin: 0 auto; border-radius: 6px; background: #fff; padding: 4px; display: flex; align-items: center; justify-content: center;"></div>
+            <div style="margin-top: 8px; font-size: 0.95rem;">
+                <div style="color: #4ade80; font-weight: bold;" id="bank-name">ธนาคาร: กำลังโหลด...</div>
+                <div style="color: #f1c40f; font-weight: bold; font-size: 1.1rem; letter-spacing: 1px;" id="bank-number">เลขบัญชี: กำลังโหลด...</div>
+                <div style="color: #ddd;" id="bank-account-name">ชื่อบัญชี: กำลังโหลด...</div>
+            </div>
+        </div>
+
+        <form id="booking-form" onsubmit="submitBooking(event)">
+            <div class="form-group-booking">
+                <label>ชื่อ :</label>
+                <input type="text" id="cust-firstname" placeholder="กรอกชื่อจริง" required>
+            </div>
+            <div class="form-group-booking">
+                <label>นามสกุล :</label>
+                <input type="text" id="cust-lastname" placeholder="กรอกนามสกุล" required>
+            </div>
+            <div class="form-group-booking">
+                <label>เบอร์โทรศัพท์ :</label>
+                <input type="tel" id="cust-phone" placeholder="เช่น 081-234-5678" required>
+            </div>
+            <div class="form-group-booking">
+                <label>แนบสลิปการโอนเงิน :</label>
+                <input type="file" id="cust-slip" accept="image/*" required style="background: none; border: none; padding: 0;">
+            </div>
+            
+            <button type="submit" class="btn-confirm" style="width: 100%; margin-top: 15px;">📤 ยืนยันและส่งสลิปการจอง</button>
+        </form>
+    </div>
+</div>
+
+<!-- Modal ดูรูปสลิป -->
+<div id="slip-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="text-align: center; max-width: 400px;">
+        <span class="close-btn" onclick="closeSlipModal()">&times;</span>
+        <h3 style="color: #f1c40f; margin-bottom: 15px;">🧾 สลิปการโอนเงิน</h3>
+        <img id="slip-img-full" src="" alt="Slip" style="width: 100%; border-radius: 8px;">
+    </div>
+</div>
+
+<!-- Modal เข้าสู่ระบบแอดมิน -->
+<div id="admin-login-modal" class="modal" style="display: none;">
+    <div class="modal-content" style="max-width: 380px;">
+        <span class="close-btn" onclick="closeAdminLoginModal()">&times;</span>
+        <h3 style="color: #f1c40f; margin-bottom: 15px;">🔐 เข้าสู่ระบบแอดมิน</h3>
+        <form id="admin-login-form" onsubmit="submitAdminLogin(event)">
+            <div class="form-group-booking">
+                <label>ชื่อผู้ใช้ :</label>
+                <input type="text" id="admin-username" autocomplete="username" required>
+            </div>
+            <div class="form-group-booking">
+                <label>รหัสผ่าน :</label>
+                <input type="password" id="admin-password" autocomplete="current-password" required>
+            </div>
+            <p id="admin-login-error" style="color: #e74c3c; font-size: 0.85rem; min-height: 1.2em;"></p>
+            <button type="submit" class="btn-confirm" style="width: 100%; margin-top: 5px;">🔐 เข้าสู่ระบบ</button>
+        </form>
+    </div>
+</div>
+
+<!-- 🟢 Footer ย้ายมาไว้ด้านล่างสุดของเนื้อหา -->
+<footer>
+    <p>© 2026 ร้านบ้านตะลุง Ban Ta-lung. All rights reserved.</p>
+</footer>
+
+<script src="app.js?v=17x"></script>
+    <script src="admin-tools.js?v=3"></script>
+    <script src="vendor/jsQR.js?v=1"></script>
+    <script src="inspect.js?v=2"></script>
+
+
+                             <!-- ==================== MODALS FULL DESIGN (วางทับบรรทัด 861) ==================== -->
+<style>
+  .custom-modal-backdrop {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; width: 100vw; height: 100vh;
+    background: rgba(0, 0, 0, 0.75);
+    backdrop-filter: blur(4px);
+    z-index: 99999;
+    justify-content: center;
+    align-items: center;
+  }
+  .custom-modal-box {
+    background: #1e293b;
+    color: #f8fafc;
+    border: 1px solid #334155;
+    border-radius: 12px;
+    width: 90%;
+    max-width: 600px;
+    max-height: 85vh;
+    overflow-y: auto;
+    padding: 24px;
+    box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5);
+  }
+</style>
+
+<!-- Modal 1: แก้ไขเมนูอาหาร -->
+<div id="modalEditMenu" class="custom-modal-backdrop">
+  <div class="custom-modal-box">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h3 style="margin: 0; font-size: 1.25rem;">🍔 จัดการเมนูอาหาร & เครื่องดื่ม</h3>
+      <button onclick="closeModal('modalEditMenu')" style="background:none; border:none; color:#94a3b8; font-size: 1.5rem; cursor:pointer;">✕</button>
+    </div>
+    
+    <form id="formMenu" onsubmit="saveMenu(event)" style="background: #0f172a; padding: 16px; border-radius: 8px; margin-bottom: 20px;">
+      <input type="hidden" id="menuId">
+      
+      <div style="margin-bottom: 10px;">
+        <label style="font-size:0.85rem; color:#94a3b8; display:block; margin-bottom:4px;">ชื่อรายการอาหาร:</label>
+        <input type="text" id="menuName" required style="width: 100%; padding: 8px; background: #1e293b; border: 1px solid #334155; color: white; border-radius: 6px; box-sizing: border-box;">
+      </div>
+
+      <div style="display: flex; gap: 10px; margin-bottom: 10px;">
+        <div style="flex: 1;">
+          <label style="font-size:0.85rem; color:#94a3b8; display:block; margin-bottom:4px;">หมวดหมู่:</label>
+          <select id="menuCategory" style="width: 100%; padding: 8px; background: #1e293b; border: 1px solid #334155; color: white; border-radius: 6px;">
+            <option value="food">🍱 อาหารหลัก</option>
+            <option value="drink">🍹 เครื่องดื่ม</option>
+            <option value="snack">🍟 ทานเล่น</option>
+          </select>
+        </div>
+        <div style="flex: 1;">
+          <label style="font-size:0.85rem; color:#94a3b8; display:block; margin-bottom:4px;">ราคา (บาท):</label>
+          <input type="number" id="menuPrice" required style="width: 100%; padding: 8px; background: #1e293b; border: 1px solid #334155; color: white; border-radius: 6px; box-sizing: border-box;">
+        </div>
+      </div>
+
+      <div style="margin-bottom: 12px;">
+        <label style="font-size:0.85rem; color:#94a3b8; display:block; margin-bottom:4px;">รูปภาพเมนู:</label>
+        <input type="file" id="menuImage" accept="image/*" style="width: 100%; color: #94a3b8; font-size: 0.85rem;">
+      </div>
+
+      <div style="margin-bottom: 12px; display: flex; align-items: center; gap: 8px;">
+        <input type="checkbox" id="menuAvailable" checked style="width: 18px; height: 18px; cursor: pointer;">
+        <label for="menuAvailable" style="cursor: pointer; color: #f8fafc; font-size: 0.9rem;">พร้อมขาย (หากเอาออกจะแสดงเป็น สินค้าหมด)</label>
+      </div>
+
+      <button type="submit" style="width: 100%; background: #10b981; color: white; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 บันทึกเมนู</button>
+    </form>
+
+    <h4 style="margin-bottom: 10px; color: #f8fafc;">📋 รายการที่มีในระบบ</h4>
+    <div id="adminMenuList" style="max-height: 200px; overflow-y: auto;"></div>
+  </div>
+</div>
+
+<!-- Modal 2: แก้ไขติดต่อเรา -->
+<div id="modalEditContact" class="custom-modal-backdrop">
+  <div class="custom-modal-box">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h3 style="margin: 0;">📞 จัดการข้อมูลติดต่อร้าน</h3>
+      <button onclick="closeModal('modalEditContact')" style="background:none; border:none; color:#94a3b8; font-size: 1.5rem; cursor:pointer;">✕</button>
+    </div>
+    <form onsubmit="saveContact(event)">
+      <div style="margin-bottom: 10px;"><label>เบอร์โทร:</label><input type="text" id="cPhone" style="width: 100%; padding: 8px; background:#0f172a; border:1px solid #334155; color:white; border-radius:6px; box-sizing: border-box;"></div>
+      <div style="margin-bottom: 10px;"><label>Line ID:</label><input type="text" id="cLine" style="width: 100%; padding: 8px; background:#0f172a; border:1px solid #334155; color:white; border-radius:6px; box-sizing: border-box;"></div>
+      <div style="margin-bottom: 10px;"><label>Facebook:</label><input type="text" id="cFacebook" style="width: 100%; padding: 8px; background:#0f172a; border:1px solid #334155; color:white; border-radius:6px; box-sizing: border-box;"></div>
+      <div style="margin-bottom: 10px;"><label>เวลาเปิด-ปิด:</label><input type="text" id="cHours" style="width: 100%; padding: 8px; background:#0f172a; border:1px solid #334155; color:white; border-radius:6px; box-sizing: border-box;"></div>
+      <div style="margin-bottom: 10px;"><label>ที่อยู่ร้าน:</label><textarea id="cAddress" style="width: 100%; padding: 8px; background:#0f172a; border:1px solid #334155; color:white; border-radius:6px; box-sizing: border-box;"></textarea></div>
+      <div style="margin-bottom: 12px;"><label>ลิงก์ Google Maps:</label><input type="text" id="cMap" style="width: 100%; padding: 8px; background:#0f172a; border:1px solid #334155; color:white; border-radius:6px; box-sizing: border-box;"></div>
+      <button type="submit" style="width: 100%; background: #3b82f6; color: white; padding: 10px; border: none; border-radius: 6px; font-weight: bold; cursor: pointer;">💾 บันทึกข้อมูลติดต่อ</button>
+    </form>
+  </div>
+</div>
+
+<!-- Modal 3: แสดงผลฝั่งลูกค้า (Navbar) -->
+<div id="modalClientView" class="custom-modal-backdrop">
+  <div class="custom-modal-box">
+    <div id="clientViewContent"></div>
+    <button onclick="closeModal('modalClientView')" style="margin-top: 15px; padding: 8px; width: 100%; background: #475569; color: white; border: none; border-radius: 6px; cursor: pointer;">ปิดหน้าต่าง</button>
+  </div>
+</div>
+
+<script>
+  // 🟢 เปลี่ยนชื่อตัวแปรเป็น BACKEND_URL เพื่อป้องกันการประกาศซ้ำ
+  const BACKEND_URL = (typeof API_BASE !== 'undefined') ? API_BASE : 'http://localhost:3000';
+
+  function closeModal(id) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
+  }
+
+  function openEditMenuModal() {
+    document.getElementById('modalEditMenu').style.display = 'flex';
+    loadAdminMenuList();
+  }
+
+  function openEditContactModal() {
+    document.getElementById('modalEditContact').style.display = 'flex';
+    loadContactData();
+  }
+
+  // --- แอดมิน: โหลดข้อมูลติดต่อ ---
+  async function loadContactData() {
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/content/contact`);
+      const data = await res.json();
+      if (data) {
+        document.getElementById('cPhone').value = data.phone || '';
+        document.getElementById('cLine').value = data.line_id || '';
+        document.getElementById('cFacebook').value = data.facebook || '';
+        document.getElementById('cHours').value = data.open_hours || '';
+        document.getElementById('cAddress').value = data.address || '';
+        document.getElementById('cMap').value = data.google_maps_url || '';
+      }
+    } catch (err) {
+      console.error(err);
+    }
+  }
+
+  // 🟢 บันทึกข้อมูลติดต่อ (พร้อมตรวจสอบการตอบกลับจาก Backend)
+async function saveContact(e) {
+  e.preventDefault();
+
+  const data = {
+    phone: document.getElementById('cPhone')?.value || '',
+    line_id: document.getElementById('cLine')?.value || '',
+    facebook: document.getElementById('cFacebook')?.value || '',
+    open_hours: document.getElementById('cHours')?.value || '',
+    address: document.getElementById('cAddress')?.value || '',
+    google_maps_url: document.getElementById('cMap')?.value || ''
+  };
+
+  try {
+    const res = await fetch(`${API_BASE}/api/content/contact/save`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...authHeaders() // แนบ Token แอดมิน
+      },
+      body: JSON.stringify(data)
+    });
+
+    if (res.ok) {
+      alert('✅ บันทึกข้อมูลติดต่อสำเร็จ!');
+      // 🔧 เดิมโค้ดสั่งปิด Modal นี้ทันทีหลังบันทึก (closeModal) ทำให้เด้งกลับไปหน้า Admin Hub
+      // ทุกครั้งที่บันทึก ผู้ใช้เลยต้องกดเข้าหน้านี้ใหม่ซ้ำๆ - ตอนนี้แก้ให้อยู่หน้าเดิมต่อแทน
+    } else {
+      const errData = await res.json().catch(() => ({}));
+      alert(`❌ บันทึกไม่สำเร็จ (${res.status}): ${errData.error || errData.message || 'สิทธิ์ไม่ถูกต้อง หรือ Token หมดอายุ'}`);
+    }
+  } catch (err) {
+    alert('❌ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Backend ได้');
+  }
+}
+  // 🟢 ตัวแปรสำหรับระบบค้นหาและแยกหมวดหมู่
+  let allMenuItems = [];
+  let currentCategoryFilter = 'all';
+
+  // 🟢 หน้าบ้าน: เปิดดูเมนูอาหาร (หน้าเต็มแบบเดียวกับหน้าแรก/ผังจองโต๊ะ มีช่องค้นหา + แท็บแยกหมวดหมู่)
+  async function showClientMenu() {
+    if (typeof hideAllPublicPages === 'function') hideAllPublicPages();
+
+    const page = document.getElementById('menu-page');
+    const grid = document.getElementById('menuGridContainer');
+    if (!page || !grid) return alert('ไม่พบส่วนแสดงผลหน้าเมนูอาหาร');
+
+    page.style.display = 'block';
+    grid.innerHTML = '<p style="color:#f8fafc; text-align:center; padding: 30px; font-size: 1.1rem; grid-column: 1 / -1;">⏳ กำลังโหลดเมนูอร่อยๆ...</p>';
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    try {
+      const res = await fetch(`${API_BASE}/api/content/menu`);
+      if (!res.ok) throw new Error(`Status: ${res.status}`);
+
+      allMenuItems = await res.json();
+      if (!Array.isArray(allMenuItems)) allMenuItems = [];
+
+      const searchInput = document.getElementById('menuSearchInput');
+      if (searchInput) searchInput.value = '';
+
+      setCategoryFilter('all'); // รีเซ็ตหมวดหมู่เป็น "ทั้งหมด" ทุกครั้งที่เปิด + วาดผล
+    } catch (err) {
+      grid.innerHTML = `<p style="color:#ef4444; text-align:center; padding: 20px; grid-column: 1 / -1;">❌ ไม่สามารถโหลดข้อมูลรายการอาหารได้</p>`;
+    }
+  }
+
+  // 🟢 สไตล์ปุ่มแท็บหมวดหมู่
+  function getTabStyle(isActive) {
+    return `flex: 1; padding: 7px 10px; border-radius: 8px; border: none; font-weight: bold; font-size: 0.85rem; cursor: pointer; transition: 0.2s; ${
+      isActive 
+        ? 'background: #10b981; color: #ffffff; box-shadow: 0 2px 6px rgba(16, 185, 129, 0.4);' 
+        : 'background: #1e293b; color: #94a3b8; border: 1px solid #334155;'
+    }`;
+  }
+
+  // 🟢 สลับหมวดหมู่เมื่อกดปุ่ม (รองรับ 4 ปุ่ม)
+  function setCategoryFilter(category) {
+    currentCategoryFilter = category;
+    
+    ['all', 'food', 'snack', 'drink'].forEach(cat => {
+      const btn = document.getElementById(`btn-cat-${cat}`);
+      if (btn) btn.style.cssText = getTabStyle(currentCategoryFilter === cat);
+    });
+
+    filterClientMenu();
+  }
+
+// 🟢 กรองข้อมูลตามคำค้นหาและหมวดหมู่ที่แอดมินเลือกบันทึก
+  function filterClientMenu() {
+    const grid = document.getElementById('menuGridContainer');
+    const searchInput = document.getElementById('menuSearchInput');
+    const countBadge = document.getElementById('menuCountBadge');
+    if (!grid) return;
+
+    const query = searchInput ? searchInput.value.trim().toLowerCase() : '';
+
+    const filtered = allMenuItems.filter(item => {
+      const matchesQuery = item.name.toLowerCase().includes(query);
+      const itemCat = (item.category || '').toLowerCase().trim();
+      
+      let matchesCategory = true;
+      if (currentCategoryFilter === 'food') {
+        matchesCategory = (itemCat === 'food' || itemCat === 'อาหารหลัก' || itemCat === 'อาหาร' || itemCat === '');
+      } else if (currentCategoryFilter === 'snack') {
+        matchesCategory = (itemCat === 'snack' || itemCat === 'ทานเล่น');
+      } else if (currentCategoryFilter === 'drink') {
+        matchesCategory = (itemCat === 'drink' || itemCat === 'เครื่องดื่ม');
+      }
+
+      return matchesQuery && matchesCategory;
+    });
+
+    if (countBadge) countBadge.innerText = `${filtered.length} รายการ`;
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '<p style="color:#94a3b8; text-align:center; padding: 30px; grid-column: 1 / -1;">ไม่พบรายการในหมวดหมู่นี้</p>';
+      return;
+    }
+
+    let html = '';
+    filtered.forEach(item => {
+      const isOut = !item.is_available;
+      const itemCat = (item.category || '').toLowerCase().trim();
+      
+      // เลือกไอคอนตามหมวดหมู่ถ้าไม่มีรูปภาพ
+      let icon = '🍱';
+      if (itemCat === 'drink' || itemCat === 'เครื่องดื่ม') icon = '🍹';
+      else if (itemCat === 'snack' || itemCat === 'ทานเล่น') icon = '🍟';
+
+      const imgSrc = item.image_url ? (/^https?:\/\//i.test(item.image_url) ? item.image_url : `${API_BASE}${item.image_url}`) : '';
+      const imgHtml = item.image_url 
+        ? `<img src="${imgSrc}" style="width: 100%; height: 100%; object-fit: cover; filter: ${isOut ? 'grayscale(90%)' : 'none'};">`
+        : `<div style="width: 100%; height: 100%; background: #0f172a; display: flex; align-items: center; justify-content: center; font-size: 3rem;">${icon}</div>`;
+
+      html += `
+        <div style="position: relative; height: 160px; border-radius: 12px; overflow: hidden; border: 1px solid ${isOut ? '#334155' : '#475569'}; opacity: ${isOut ? 0.6 : 1}; box-shadow: 0 4px 8px rgba(0, 0, 0, 0.4);">
+          ${imgHtml}
+          <div style="position: absolute; inset: 0; background: linear-gradient(to top, rgba(15, 23, 42, 0.95) 0%, rgba(15, 23, 42, 0.4) 55%, transparent 100%);"></div>
+          ${isOut ? `<span style="position: absolute; top: 8px; right: 8px; background: #ef4444; color: white; font-size: 0.7rem; font-weight: bold; padding: 2px 8px; border-radius: 12px; z-index: 3; box-shadow: 0 2px 4px rgba(0,0,0,0.4);">หมด</span>` : ''}
+          <div style="position: absolute; bottom: 0; left: 0; right: 0; padding: 10px 12px; z-index: 2; display: flex; justify-content: space-between; align-items: flex-end; gap: 6px;">
+            <div style="font-weight: 700; color: #ffffff; font-size: 0.95rem; line-height: 1.2; text-shadow: 0 2px 4px rgba(0,0,0,0.8); overflow: hidden; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical;">
+              ${escapeHtml(item.name)}
+            </div>
+            <span style="color: #34d399; font-weight: 800; font-size: 0.9rem; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px); padding: 3px 8px; border-radius: 6px; border: 1px solid rgba(52, 211, 153, 0.3); white-space: nowrap; box-shadow: 0 2px 4px rgba(0,0,0,0.5);">
+              ${item.price} ฿
+            </span>
+          </div>
+        </div>`;
+    });
+
+    grid.innerHTML = html;
+  }
+
+// 🟢 ดึงข้อมูลติดต่อมาแสดงหน้าบ้าน (หน้าเต็มแบบเดียวกับหน้าแรก/ผังจองโต๊ะ)
+async function showClientContact() {
+  if (typeof hideAllPublicPages === 'function') hideAllPublicPages();
+
+  const page = document.getElementById('contact-page');
+  const content = document.getElementById('contactPageContent');
+  if (!page || !content) return;
+
+  page.style.display = 'block';
+  content.innerHTML = '<p style="color:#f8fafc; text-align:center; padding: 20px;">⏳ กำลังโหลดข้อมูลติดต่อ...</p>';
+  window.scrollTo({ top: 0, behavior: 'smooth' });
+
+  try {
+    const res = await fetch(`${API_BASE}/api/content/contact`);
+    if (!res.ok) throw new Error(`Status: ${res.status}`);
+
+    const data = await res.json();
+    const rows = [
+      ['📱', 'เบอร์โทร', data.phone ? `<a href="tel:${data.phone}" style="color:#3b82f6; text-decoration:none;">${escapeHtml(data.phone)}</a>` : '-'],
+      ['💬', 'LINE', escapeHtml(data.line_id || '-')],
+      ['📘', 'Facebook', escapeHtml(data.facebook || '-')],
+      ['🕐', 'เวลาเปิด-ปิด', escapeHtml(data.open_hours || '-')],
+      ['📍', 'ที่อยู่ร้าน', escapeHtml(data.address || '-')]
+    ];
+
+    const html = `
+      <div style="background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.1); border-radius: 12px; padding: 24px;">
+        ${rows.map(([icon, label, value]) => `
+          <div style="display:flex; gap:12px; padding:12px 0; border-bottom:1px solid rgba(255,255,255,0.08);">
+            <span style="font-size:1.3rem;">${icon}</span>
+            <div>
+              <div style="color:#94a3b8; font-size:0.8rem;">${label}</div>
+              <div style="color:#f8fafc; font-size:1rem; font-weight:bold;">${value}</div>
+            </div>
+          </div>
+        `).join('')}
+        ${data.google_maps_url ? `<a href="${data.google_maps_url}" target="_blank" rel="noopener" style="display:block; text-align:center; margin-top:18px; padding:12px; background:#10b981; color:white; border-radius:8px; text-decoration:none; font-weight:bold;">🗺️ เปิดตำแหน่งร้านด้วย Google Maps</a>` : ''}
+      </div>
+    `;
+    content.innerHTML = html;
+  } catch (err) {
+    content.innerHTML = `<p style="color:#ef4444; text-align:center; padding: 10px;">❌ ไม่สามารถโหลดข้อมูลได้</p>`;
+  }
+}
+
+// 🟢 ฟังก์ชันจัดการเมนูอาหารและลบเมนู
+  async function loadAdminMenuList() {
+    try {
+      const res = await fetch(`${API_BASE}/api/content/menu`);
+      const items = await res.json();
+      const div = document.getElementById('adminMenuList');
+      if (!div) return;
+
+      if (!items || items.length === 0) {
+        div.innerHTML = '<p style="color:#94a3b8; text-align:center; padding:10px;">ยังไม่มีรายการเมนู</p>';
+        return;
+      }
+
+      div.innerHTML = items.map(item => `
+        <div style="display: flex; align-items: center; justify-content: space-between; padding: 8px; background: #0f172a; margin-bottom: 6px; border-radius: 6px;">
+          <div style="display: flex; align-items: center; gap: 10px;">
+            ${item.image_url ? `<img src="${/^https?:\/\//i.test(item.image_url) ? item.image_url : API_BASE + item.image_url}" style="width: 40px; height: 40px; object-fit: cover; border-radius: 4px;">` : '🍔'}
+            <div>
+              <div style="font-weight: bold; color:#f8fafc;">${item.name} (${item.price}฿)</div>
+              <div style="font-size: 0.75rem; color: #94a3b8;">${item.is_available ? '🟢 ขายอยู่' : '🔴 หมด'}</div>
+            </div>
+          </div>
+          <button onclick="deleteMenu(${item.id})" style="background: #ef4444; color: white; border: none; padding: 4px 8px; border-radius: 4px; cursor: pointer; font-weight: bold;">ลบ</button>
+        </div>
+      `).join('');
+    } catch (err) {
+      console.error('loadAdminMenuList Error:', err);
+    }
+  }
+
+  async function saveMenu(e) {
+    e.preventDefault();
+    
+    const token = getToken();
+    if (!token) {
+      alert('❌ ไม่พบสิทธิ์แอดมิน กรุณาเข้าสู่ระบบใหม่อีกครั้ง');
+      return;
+    }
+
+    const formData = new FormData();
+    if (document.getElementById('menuId')?.value) formData.append('id', document.getElementById('menuId').value);
+    formData.append('name', document.getElementById('menuName')?.value || '');
+    formData.append('category', document.getElementById('menuCategory')?.value || '');
+    formData.append('price', document.getElementById('menuPrice')?.value || 0);
+    formData.append('is_available', document.getElementById('menuAvailable')?.checked || false);
+    
+    const fileInput = document.getElementById('menuImage');
+    if (fileInput && fileInput.files[0]) formData.append('image', fileInput.files[0]);
+
+    try {
+      const res = await fetch(`${API_BASE}/api/content/menu/save`, { 
+        method: 'POST',
+        headers: authHeaders(), 
+        body: formData 
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (res.ok) {
+        alert('✅ บันทึกเมนูสำเร็จ!');
+        document.getElementById('formMenu').reset();
+        loadAdminMenuList();
+        // 🔧 ยืนยันอีกครั้งว่า Modal นี้ต้องเปิดค้างไว้หลังบันทึก ไม่ปิด/ไม่สลับหน้าไปไหน
+        const modal = document.getElementById('modalEditMenu');
+        if (modal) modal.style.display = 'flex';
+      } else {
+        alert(`❌ บันทึกไม่สำเร็จ (${res.status}): ${data.error || data.message || 'Token ไม่ถูกต้องหรือหมดอายุ'}`);
+      }
+    } catch (err) {
+      alert('❌ ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ Backend ได้');
+    }
+  }
+
+  async function deleteMenu(id) {
+    if (!confirm('ยืนยันลบรายการนี้?')) return;
+    try {
+      const res = await fetch(`${API_BASE}/api/content/menu/${id}`, { 
+        method: 'DELETE',
+        headers: authHeaders()
+      });
+      if (res.ok) {
+        loadAdminMenuList();
+      } else {
+        alert('❌ ไม่สามารถลบรายการได้');
+      }
+    } catch (err) {
+      console.error('deleteMenu Error:', err);
+    }
+  }
+
+  // 🟢 ฟังก์ชันกลับหน้า Admin Central Hub (ใช้ ID ที่ถูกต้อง)
+  function backToAdminHub() {
+    // 1. ซ่อนหน้าตรวจบัตรคอนเสิร์ต
+    const inspectSec = document.getElementById('inspect-section');
+    if (inspectSec) inspectSec.style.display = 'none';
+    if (typeof stopInspectPolling === 'function') stopInspectPolling();
+    if (typeof rememberAdminPage === 'function') rememberAdminPage('hub');
+
+    // 2. เปิดแสดงผลหน้าเมนูกลางแอดมิน (Admin Central Hub)
+    const adminHub = document.getElementById('admin-hub-section');
+    if (adminHub) {
+      adminHub.style.display = 'block';
+    }
+  }
+</script>
+
+
+</body>
+</html>

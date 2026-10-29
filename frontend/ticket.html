@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ดูบัตรของฉัน - ร้านบ้านตะลุง</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Kanit:wght@300;400;600&display=swap" rel="stylesheet">
+    <style>
+        :root { color-scheme: dark; }
+        * { box-sizing: border-box; }
+        body { margin: 0; font-family: 'Kanit', system-ui, sans-serif; background: #12161c; color: #f1f5f9; min-height: 100vh; }
+        .wrap { max-width: 480px; margin: 0 auto; padding: 18px 14px 60px; }
+        .top { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
+        .top a { color: #f1c40f; text-decoration: none; font-size: 0.92rem; }
+        h1 { margin: 0 0 4px; font-size: 1.45rem; color: #f1c40f; }
+        .event { color: #94a3b8; font-size: 0.88rem; margin-bottom: 16px; }
+        .card { background: #1e2530; border: 1px solid #334155; border-radius: 16px; padding: 16px; margin-bottom: 14px; }
+        label { display: block; font-size: 0.86rem; color: #cbd5e1; margin: 10px 0 0; }
+        input { display: block; width: 100%; margin-top: 5px; padding: 12px; min-height: 46px; background: #111827; border: 1px solid #3b475a; border-radius: 10px; color: #fff; font-family: inherit; font-size: 1rem; }
+        .row2 { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        button { font-family: inherit; cursor: pointer; }
+        .btn { display: block; width: 100%; margin-top: 14px; padding: 13px; min-height: 48px; border: 0; border-radius: 12px; background: #f1c40f; color: #1a1a1a; font-size: 1.02rem; font-weight: 600; }
+        .btn:disabled { opacity: 0.5; }
+        .btn.ghost { background: #2a3342; color: #f1f5f9; border: 1px solid #3b475a; font-weight: 400; margin-top: 10px; }
+        .err { color: #fca5a5; background: rgba(185, 28, 28, 0.15); border: 1px solid #b91c1c; border-radius: 10px; padding: 10px 12px; margin-top: 12px; font-size: 0.9rem; display: none; line-height: 1.5; }
+        .hint { color: #94a3b8; font-size: 0.8rem; line-height: 1.55; margin-top: 10px; }
+        .chip { display: inline-block; padding: 4px 11px; border-radius: 999px; font-size: 0.8rem; font-weight: 600; color: #fff; }
+        .chip.unpaid { background: #d97706; }
+        .chip.approved { background: #1f9d55; } .chip.pending { background: #f1c40f; color: #1a1a1a; } .chip.rejected { background: #b91c1c; } .chip.used { background: #475569; }
+        .tk-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+        .tk-name { font-size: 1.15rem; font-weight: 600; }
+        .tk-meta { margin-top: 8px; font-size: 0.9rem; color: #cbd5e1; line-height: 1.7; }
+        .tk-tables { color: #f1c40f; font-weight: 600; }
+        .qr-box { margin: 14px auto 0; background: #fff; padding: 14px; border-radius: 14px; width: fit-content; }
+        .qr-box canvas { display: block; width: min(68vw, 260px); height: min(68vw, 260px); image-rendering: pixelated; }
+        .qr-note { text-align: center; color: #cbd5e1; font-size: 0.84rem; margin-top: 10px; line-height: 1.5; }
+        .used-box { text-align: center; padding: 22px 8px; color: #cbd5e1; }
+        .used-box b { display: block; font-size: 1.3rem; color: #4ade80; margin-bottom: 4px; }
+        .pay-line { margin-top: 4px; font-weight: 600; } .pay-line.paid { color: #4ade80; } .pay-line.unpaid { color: #fbbf24; }
+        /* บิล: กระดาษสีขาวเหมือนใบเสร็จฝั่งแอดมิน */
+        .bill { position: relative; background: #fff; color: #111; border-radius: 12px; padding: 18px 16px 16px; margin-top: 14px; }
+        .bill-paid { position: absolute; top: 12px; right: 12px; border: 2px solid #15803d; color: #15803d; border-radius: 8px; padding: 2px 10px; font-weight: 700; font-size: 0.9rem; transform: rotate(6deg); }
+        .bill-shop { text-align: center; font-size: 1.15rem; font-weight: 700; margin-top: 4px; padding: 0 70px; }
+        .bill-small { font-size: 0.78rem; color: #475569; text-align: center; margin-top: 2px; } .bill-small.center { margin-top: 12px; }
+        .bill-title { text-align: center; font-size: 1.1rem; margin: 10px 0 8px; }
+        .bill-table { width: 100%; border-collapse: collapse; font-size: 0.88rem; }
+        .bill-table td { padding: 5px 0; border-bottom: 1px dashed #cbd5e1; vertical-align: top; }
+        .bill-table td:first-child { color: #475569; width: 38%; padding-right: 8px; }
+        .bill-table tr.bill-total td { border-bottom: 0; font-size: 1rem; padding-top: 9px; }
+        /* ส่วนหัวการ์ด: ข้อมูลซ้าย / ป้ายสถานะ + QR เล็กขวา */
+        .tk-top { display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: start; }
+        .tk-side { display: flex; flex-direction: column; align-items: flex-end; gap: 8px; max-width: 150px; }
+        .tk-side .chip { white-space: nowrap; }
+        .tk-qr { display: flex; flex-direction: column; align-items: center; }
+        .qr-box.sm { margin: 0; padding: 6px; border-radius: 10px; cursor: zoom-in; }
+        .qr-box.sm canvas { width: 118px; height: 118px; }
+        .qr-note.sm { font-size: 0.62rem; line-height: 1.35; margin-top: 5px; color: #94a3b8; }
+        .qr-overlay { position: fixed; inset: 0; z-index: 20; background: rgba(0, 0, 0, 0.88); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 14px; cursor: zoom-out; }
+        .qr-overlay .qr-box { margin: 0; }
+        .bill { margin-top: 12px; }
+        .card > .btn.ghost { margin-top: 12px; }
+        .toast { position: fixed; left: 50%; bottom: 20px; transform: translateX(-50%); background: #1f9d55; color: #fff; padding: 12px 18px; border-radius: 12px; z-index: 10; max-width: 90vw; display: none; }
+    </style>
+</head>
+<body>
+<div class="wrap">
+    <div class="top">
+        <a href="index.html">← กลับหน้าแรก</a>
+        <span style="color:#64748b;font-size:0.8rem;">ร้านบ้านตะลุง</span>
+    </div>
+    <h1>🎫 ดูบัตรของฉัน</h1>
+    <div class="event" id="event-line"></div>
+
+    <form id="lookup-form" class="card" autocomplete="off">
+        <div class="row2">
+            <label>ชื่อ<input type="text" id="first-name" required maxlength="100" autocomplete="given-name"></label>
+            <label>นามสกุล<input type="text" id="last-name" required maxlength="100" autocomplete="family-name"></label>
+        </div>
+        <label>เบอร์โทร<input type="tel" id="phone" required maxlength="20" inputmode="tel" autocomplete="tel" placeholder="เช่น 0812345678"></label>
+        <div class="err" id="err"></div>
+        <button class="btn" type="submit" id="submit-btn">ค้นหาบัตรของฉัน</button>
+        <div class="hint">กรอกชื่อ นามสกุล และเบอร์โทรให้ตรงกับที่ใช้จองไว้ เมื่อทางร้านอนุมัติแล้วจะมี QR Code ให้แสดงที่ประตูทางเข้า</div>
+    </form>
+
+    <div id="results"></div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script src="vendor/qrcode-generator.js?v=1"></script>
+<script src="ticket.js?v=3"></script>
+</body>
+</html>
